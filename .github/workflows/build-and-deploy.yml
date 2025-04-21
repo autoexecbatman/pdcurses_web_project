@@ -29,9 +29,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev fonts-dejavu
           
-      - name: Clone PDCurses
+      - name: Get precompiled PDCurses
         run: |
-          git clone https://github.com/wmcbrine/PDCurses.git pdcurses
+          git clone https://github.com/autoexecbatman/pdcurses_web_project.git pdcurses_web
+          # Create a directory for PDCurses includes and copy them
+          mkdir -p pdcurses/include
+          cp -r pdcurses_web/include/* pdcurses/include/
+          # Create a directory for precompiled library if needed
+          mkdir -p pdcurses/lib
+          cp -r pdcurses_web/lib/* pdcurses/lib/ || echo "No precompiled libs found, will use header files only"
+          # List the files to make sure they were copied correctly
+          ls -la pdcurses/include/
+          ls -la pdcurses/lib/ || echo "No lib directory available"
           
       - name: Set up assets directory
         run: |
@@ -48,17 +57,52 @@ jobs:
       - name: Build WASM
         run: |
           source emsdk/emsdk_env.sh
-          emcc -O2 -Wall -Ipdcurses main.c $(find pdcurses/sdl2 -name "*.c") $(find pdcurses/pdcurses -name "*.c") \
-          -o hello_pdcurses.html \
-          -s WASM=1 -s USE_SDL=2 -s USE_SDL_TTF=2 -s ALLOW_MEMORY_GROWTH=1 \
-          -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
-          --preload-file assets \
-          -s ASYNCIFY=1 \
-          -s ASSERTIONS=1 \
-          -s SAFE_HEAP=1 \
-          -s ERROR_ON_UNDEFINED_SYMBOLS=0 \
-          -s EXPORTED_FUNCTIONS='["_main", "_malloc"]' \
-          --shell-file shell.html
+          # If there's a precompiled library, use it, otherwise compile the source
+          if [ -f pdcurses/lib/libpdcurses.a ]; then
+            echo "Using precompiled PDCurses library"
+            emcc -O2 -Wall -Ipdcurses/include main.c pdcurses/lib/libpdcurses.a \
+            -o hello_pdcurses.html \
+            -s WASM=1 -s USE_SDL=2 -s USE_SDL_TTF=2 -s ALLOW_MEMORY_GROWTH=1 \
+            -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
+            --preload-file assets \
+            -s ASYNCIFY=1 \
+            -s ASSERTIONS=1 \
+            -s SAFE_HEAP=1 \
+            -s ERROR_ON_UNDEFINED_SYMBOLS=0 \
+            -s EXPORTED_FUNCTIONS='["_main", "_malloc"]' \
+            --shell-file shell.html
+          else
+            echo "Using PDCurses sources from the repository"
+            # If no precompiled library is found, try to find the source in the cloned repo
+            if [ -d pdcurses_web/src ]; then
+              emcc -O2 -Wall -Ipdcurses/include main.c $(find pdcurses_web/src -name "*.c") \
+              -o hello_pdcurses.html \
+              -s WASM=1 -s USE_SDL=2 -s USE_SDL_TTF=2 -s ALLOW_MEMORY_GROWTH=1 \
+              -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
+              --preload-file assets \
+              -s ASYNCIFY=1 \
+              -s ASSERTIONS=1 \
+              -s SAFE_HEAP=1 \
+              -s ERROR_ON_UNDEFINED_SYMBOLS=0 \
+              -s EXPORTED_FUNCTIONS='["_main", "_malloc"]' \
+              --shell-file shell.html
+            else
+              # Fallback to original method
+              echo "Falling back to original PDCurses"
+              git clone https://github.com/wmcbrine/PDCurses.git pdcurses_original
+              emcc -O2 -Wall -Ipdcurses/include main.c $(find pdcurses_original/sdl2 -name "*.c") $(find pdcurses_original/pdcurses -name "*.c") \
+              -o hello_pdcurses.html \
+              -s WASM=1 -s USE_SDL=2 -s USE_SDL_TTF=2 -s ALLOW_MEMORY_GROWTH=1 \
+              -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
+              --preload-file assets \
+              -s ASYNCIFY=1 \
+              -s ASSERTIONS=1 \
+              -s SAFE_HEAP=1 \
+              -s ERROR_ON_UNDEFINED_SYMBOLS=0 \
+              -s EXPORTED_FUNCTIONS='["_main", "_malloc"]' \
+              --shell-file shell.html
+            fi
+          fi
           
       - name: Prepare for deployment
         run: |
