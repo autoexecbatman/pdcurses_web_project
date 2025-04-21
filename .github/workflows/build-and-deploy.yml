@@ -59,12 +59,9 @@ jobs:
       run: |
         echo "/* Empty file to satisfy emscripten linker */" > dummies.c
         
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: wasm-build
-        path: |
-          hello_pdcurses.html
-          hello_pdcurses.js
-          hello_pdcurses.wasm
-          hello_pdcurses.data
+    - name: List build artifacts
+      run: |
+        ls -la
+        echo "==== BUILD COMPLETE ===="
+        echo "The following files were generated:"
+        ls -la hello_pdcurses*
