@@ -1,67 +1,92 @@
-name: Build PDCurses WASM
+name: Build and Deploy to GitHub Pages
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
 jobs:
-  build:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Install Emscripten
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          ./emsdk install latest
+          ./emsdk activate latest
+          echo "EMSDK_PATH=$(pwd)" >> $GITHUB_ENV
+          cd ..
+          
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev fonts-dejavu
+          
+      - name: Clone PDCurses
+        run: |
+          git clone https://github.com/wmcbrine/PDCurses.git pdcurses
+          
+      - name: Set up assets directory
+        run: |
+          mkdir -p assets
+          cp /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf assets/ || echo "Default font not found, using system font"
+          if [ ! -f assets/DejaVuSansMono.ttf ]; then
+            find /usr/share/fonts -name "*.ttf" | head -1 | xargs -I{} cp {} assets/DejaVuSansMono.ttf
+          fi
+          
+      - name: Fix main.c
+        run: |
+          sed -i '/^\/\//s/^\/\///' main.c
+          
+      - name: Build WASM
+        run: |
+          source $EMSDK_PATH/emsdk_env.sh
+          emcc -O2 -Wall -Ipdcurses main.c $(find pdcurses/sdl2 -name "*.c") $(find pdcurses/pdcurses -name "*.c") \
+          -o hello_pdcurses.html \
+          -s WASM=1 -s USE_SDL=2 -s USE_SDL_TTF=2 -s ALLOW_MEMORY_GROWTH=1 \
+          -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
+          --preload-file assets \
+          -s ASYNCIFY=1 \
+          -s ASSERTIONS=1 \
+          -s SAFE_HEAP=1 \
+          -s ERROR_ON_UNDEFINED_SYMBOLS=0 \
+          -s EXPORTED_FUNCTIONS='["_main", "_malloc"]' \
+          --shell-file shell.html
+          
+      - name: Prepare GitHub Pages
+        run: |
+          mkdir -p _site
+          cp hello_pdcurses.html _site/index.html
+          cp hello_pdcurses.js _site/
+          cp hello_pdcurses.wasm _site/
+          cp hello_pdcurses.data _site/
+          
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
       
-    - name: Setup Emscripten
-      uses: mymindstorm/setup-emsdk@v12
-      with:
-        version: 'latest'
-        
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev fonts-dejavu
-        
-    - name: Clone PDCurses
-      run: |
-        git clone https://github.com/wmcbrine/PDCurses.git pdcurses
-        
-    - name: Set up assets directory
-      run: |
-        mkdir -p assets
-        cp /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf assets/ || echo "Default font not found, using system font"
-        if [ ! -f assets/DejaVuSansMono.ttf ]; then
-          find /usr/share/fonts -name "*.ttf" | head -1 | xargs -I{} cp {} assets/DejaVuSansMono.ttf
-        fi
-        
-    - name: Fix main.c
-      run: |
-        sed -i '/^\/\//s/^\/\///' main.c
-        
-    - name: Build WASM
-      run: |
-        emcc -O2 -Wall -Ipdcurses main.c $(find pdcurses/sdl2 -name "*.c") $(find pdcurses/pdcurses -name "*.c") \
-        -o hello_pdcurses.html \
-        -s WASM=1 -s USE_SDL=2 -s USE_SDL_TTF=2 -s ALLOW_MEMORY_GROWTH=1 \
-        -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
-        --preload-file assets \
-        -s ASYNCIFY=1 \
-        -s ASSERTIONS=1 \
-        -s SAFE_HEAP=1 \
-        -s ERROR_ON_UNDEFINED_SYMBOLS=0 \
-        -s EXPORTED_FUNCTIONS='["_main", "_malloc"]' \
-        --shell-file shell.html
-        
-    - name: Create dummy.c if needed
-      run: |
-        echo "/* Empty file to satisfy emscripten linker */" > dummies.c
-        
-    - name: List build artifacts
-      run: |
-        ls -la
-        echo "==== BUILD COMPLETE ===="
-        echo "The following files were generated:"
-        ls -la hello_pdcurses*
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: '_site'
+          
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
