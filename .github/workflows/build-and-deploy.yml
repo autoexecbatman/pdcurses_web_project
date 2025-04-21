@@ -29,14 +29,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev fonts-dejavu
           
-      - name: Clone PDCurses
+      - name: Verify PDCurses structure
         run: |
-          git clone https://github.com/autoexecbatman/pdcurses_web_project.git pdcurses
-          # If the repository doesn't have the expected structure, fall back to original
-          if [ ! -d pdcurses/sdl2 ] || [ ! -d pdcurses/pdcurses ]; then
-            echo "Repository structure not as expected, falling back to original PDCurses"
+          # Check if necessary directories exist in the repository
+          if [ ! -d "pdcurses/sdl2" ] || [ ! -d "pdcurses/pdcurses" ]; then
+            echo "PDCurses required directories not found. Using fallback."
             rm -rf pdcurses
             git clone https://github.com/wmcbrine/PDCurses.git pdcurses
+          else
+            echo "Using existing PDCurses directories in the repository."
           fi
           
       - name: Set up assets directory
